@@ -13,3 +13,5 @@ frontend/package-lock.json
 venv/
 .DS_Store
 helpers/
+backup/
+

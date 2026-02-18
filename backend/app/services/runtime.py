@@ -286,7 +286,7 @@ class QuizRuntime:
         existing = db.scalar(
             select(Answer).where(Answer.participant_id == participant.id, Answer.question_id == question.id)
         )
-        if existing:
+        if existing and question.question_type != QuestionType.MULTIPLE_CHOICE:
             logger.info('answer_rejected_duplicate %s', log_ctx)
             return {'accepted': False, 'reason': 'Already answered'}
 
@@ -313,7 +313,7 @@ class QuizRuntime:
                         'response_seconds': round(response_seconds, 3),
                     },
                 )
-                return self._store_answer(db, quiz, participant, question, value, response_seconds)
+                return self._store_answer(db, quiz, participant, question, value, response_seconds, existing)
 
         started_at = quiz.started_at.replace(tzinfo=timezone.utc) if quiz.started_at and quiz.started_at.tzinfo is None else quiz.started_at
         window = self._question_window(quiz, question_index)
@@ -365,7 +365,7 @@ class QuizRuntime:
                 'response_seconds': round(response_seconds, 3),
             },
         )
-        return self._store_answer(db, quiz, participant, question, value, response_seconds)
+        return self._store_answer(db, quiz, participant, question, value, response_seconds, existing)
 
     def _store_answer(
         self,
@@ -375,6 +375,7 @@ class QuizRuntime:
         question: Question,
         value: str,
         response_seconds: float,
+        existing: Answer | None = None,
     ) -> dict:
 
         cleaned = value.strip()
@@ -389,16 +390,22 @@ class QuizRuntime:
 
         max_time = self._question_time(quiz, question)
         score = self._score(question.max_points, max_time, response_seconds) if is_correct else 0.0
-        db.add(
-            Answer(
-                participant_id=participant.id,
-                question_id=question.id,
-                value=stored_value,
-                is_correct=is_correct,
-                response_seconds=response_seconds,
-                score=score,
+        if existing:
+            existing.value = stored_value
+            existing.is_correct = is_correct
+            existing.response_seconds = response_seconds
+            existing.score = score
+        else:
+            db.add(
+                Answer(
+                    participant_id=participant.id,
+                    question_id=question.id,
+                    value=stored_value,
+                    is_correct=is_correct,
+                    response_seconds=response_seconds,
+                    score=score,
+                )
             )
-        )
         return {'accepted': True, 'is_correct': is_correct, 'score': score, 'response_seconds': response_seconds}
 
     def ensure_participant(self, db: Session, quiz: Quiz, user: User) -> Participant:

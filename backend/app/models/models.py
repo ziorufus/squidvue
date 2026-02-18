@@ -53,6 +53,8 @@ class Quiz(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(5), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Legacy column kept for backward-compatible writes on existing databases.
+    question_time: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     question_time_multiple_choice: Mapped[int] = mapped_column(Integer, nullable=False)
     question_time_open: Mapped[int] = mapped_column(Integer, nullable=False)
     countdown_time: Mapped[int] = mapped_column(Integer, nullable=False)

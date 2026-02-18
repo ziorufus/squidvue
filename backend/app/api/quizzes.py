@@ -95,6 +95,7 @@ def create_quiz(payload: QuizIn, current_user: User = Depends(require_privileged
     quiz = Quiz(
         code=code,
         title=payload.title,
+        question_time=payload.question_time_multiple_choice,
         question_time_multiple_choice=payload.question_time_multiple_choice,
         question_time_open=payload.question_time_open,
         countdown_time=payload.countdown_time,
@@ -138,6 +139,7 @@ def update_quiz(quiz_id: int, payload: QuizIn, current_user: User = Depends(requ
         raise HTTPException(status_code=400, detail='Cannot edit a running quiz')
 
     quiz.title = payload.title
+    quiz.question_time = payload.question_time_multiple_choice
     quiz.question_time_multiple_choice = payload.question_time_multiple_choice
     quiz.question_time_open = payload.question_time_open
     quiz.countdown_time = payload.countdown_time

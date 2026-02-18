@@ -30,7 +30,8 @@ def list_quizzes(current_user: User = Depends(require_privileged), db: Session =
             'id': q.id,
             'code': q.code,
             'title': q.title,
-            'question_time': q.question_time,
+            'question_time_multiple_choice': q.question_time_multiple_choice,
+            'question_time_open': q.question_time_open,
             'countdown_time': q.countdown_time,
             'status': q.status.value,
             'question_count': len(q.questions),
@@ -42,7 +43,8 @@ def list_quizzes(current_user: User = Depends(require_privileged), db: Session =
 @router.get('/defaults')
 def defaults(_: User = Depends(require_privileged)):
     return {
-        'default_question_time': settings.default_question_time,
+        'default_question_time_multiple_choice': settings.default_question_time_multiple_choice,
+        'default_question_time_open': settings.default_question_time_open,
         'default_countdown_time': settings.default_countdown_time,
         'default_max_points': settings.default_max_points,
     }
@@ -58,7 +60,8 @@ def get_quiz_by_code(code: str, db: Session = Depends(get_db), _: User = Depends
         'id': quiz.id,
         'code': quiz.code,
         'title': quiz.title,
-        'question_time': quiz.question_time,
+        'question_time_multiple_choice': quiz.question_time_multiple_choice,
+        'question_time_open': quiz.question_time_open,
         'countdown_time': quiz.countdown_time,
         'status': quiz.status.value,
         'questions': [
@@ -92,7 +95,8 @@ def create_quiz(payload: QuizIn, current_user: User = Depends(require_privileged
     quiz = Quiz(
         code=code,
         title=payload.title,
-        question_time=payload.question_time,
+        question_time_multiple_choice=payload.question_time_multiple_choice,
+        question_time_open=payload.question_time_open,
         countdown_time=payload.countdown_time,
         emoji_pool='',
         status=QuizStatus.READY,
@@ -134,7 +138,8 @@ def update_quiz(quiz_id: int, payload: QuizIn, current_user: User = Depends(requ
         raise HTTPException(status_code=400, detail='Cannot edit a running quiz')
 
     quiz.title = payload.title
-    quiz.question_time = payload.question_time
+    quiz.question_time_multiple_choice = payload.question_time_multiple_choice
+    quiz.question_time_open = payload.question_time_open
     quiz.countdown_time = payload.countdown_time
     quiz.emoji_pool = ''
     quiz.status = QuizStatus.READY

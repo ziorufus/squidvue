@@ -53,7 +53,7 @@ onBeforeUnmount(() => {
       </div>
       <p class="fs-4">{{ state.question.text }}</p>
       <div v-if="state.question.question_type === 'multiple_choice'" class="row g-2">
-        <div v-for="letter in ['A','B','C','D','E']" :key="letter" class="col-md-6">
+        <div v-for="letter in ['A','B','C','D','E']" :key="letter" class="col-12">
           <div class="border rounded p-3 bg-light"><strong>{{ letter }}</strong> {{ state.question.options[letter] }}</div>
         </div>
       </div>

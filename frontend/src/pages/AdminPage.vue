@@ -9,7 +9,12 @@ const router = useRouter()
 const me = getUser()
 const quizzes = ref([])
 const privileged = ref([])
-const defaults = ref({ default_question_time: 20, default_countdown_time: 5, default_max_points: 1 })
+const defaults = ref({
+  default_question_time_multiple_choice: 20,
+  default_question_time_open: 20,
+  default_countdown_time: 5,
+  default_max_points: 1
+})
 const status = ref('')
 const wsStats = ref(null)
 const ws = ref(null)
@@ -34,7 +39,8 @@ function blankQuestion(position) {
 const form = reactive({
   id: null,
   title: '',
-  question_time: 20,
+  question_time_multiple_choice: 20,
+  question_time_open: 20,
   countdown_time: 5,
   questions: [blankQuestion(1)]
 })
@@ -42,7 +48,8 @@ const form = reactive({
 function resetForm() {
   form.id = null
   form.title = ''
-  form.question_time = defaults.value.default_question_time
+  form.question_time_multiple_choice = defaults.value.default_question_time_multiple_choice
+  form.question_time_open = defaults.value.default_question_time_open
   form.countdown_time = defaults.value.default_countdown_time
   form.questions = [blankQuestion(1)]
 }
@@ -107,7 +114,8 @@ async function editQuiz(code) {
   const { data } = await api.get(`/api/quizzes/code/${code}`)
   form.id = data.id
   form.title = data.title
-  form.question_time = data.question_time
+  form.question_time_multiple_choice = data.question_time_multiple_choice
+  form.question_time_open = data.question_time_open
   form.countdown_time = data.countdown_time
   form.questions = data.questions
 }
@@ -170,13 +178,17 @@ onBeforeUnmount(() => {
         <div class="card card-soft p-3">
           <h2 class="h5">Create or Edit Quiz</h2>
           <div class="row g-2">
-            <div class="col-md-6">
+            <div class="col-md-3">
               <label class="form-label">Title</label>
               <input v-model="form.title" class="form-control" />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Question Time</label>
-              <input v-model.number="form.question_time" type="number" min="1" class="form-control" />
+              <label class="form-label">MCQ Time</label>
+              <input v-model.number="form.question_time_multiple_choice" type="number" min="1" class="form-control" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Open Time</label>
+              <input v-model.number="form.question_time_open" type="number" min="1" class="form-control" />
             </div>
             <div class="col-md-3">
               <label class="form-label">Countdown</label>

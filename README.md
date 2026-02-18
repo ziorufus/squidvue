@@ -18,7 +18,8 @@ This repository contains a full-stack real-time quiz platform with:
 Backend (`backend/.env` from `backend/.env.example`):
 
 - `ADMIN_EMAIL`
-- `DEFAULT_QUESTION_TIME`
+- `DEFAULT_QUESTION_TIME_MULTIPLE_CHOICE` (fallback: `DEFAULT_QUESTION_TIME`)
+- `DEFAULT_QUESTION_TIME_OPEN` (fallback: `DEFAULT_QUESTION_TIME`)
 - `DEFAULT_COUNTDOWN_TIME`
 - `DEFAULT_MAX_POINTS`
 - `ALLOWED_EMOJIS` (space-separated list of allowed emojis, globally assigned to users)

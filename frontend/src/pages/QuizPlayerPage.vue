@@ -63,13 +63,13 @@ function connect() {
       }
     }
     if (msg.type === 'answer_ack') {
-      submitted.value = msg.accepted || submitted.value
-      ack.value = msg.accepted ? 'Answer received' : `Not accepted: ${msg.reason}`
-      if (msg.accepted && participant.value) {
-        participant.value = {
-          ...participant.value,
-          score: Number(participant.value.score || 0) + Number(msg.score || 0)
-        }
+      const isMultipleChoice = state.value?.question?.question_type === 'multiple_choice'
+      if (!isMultipleChoice) {
+        submitted.value = msg.accepted || submitted.value
+      }
+      ack.value = msg.accepted ? (isMultipleChoice ? 'Choice saved' : 'Answer received') : `Not accepted: ${msg.reason}`
+      if (msg.accepted) {
+        await refreshParticipantScore()
       }
     }
     } catch {
@@ -81,9 +81,8 @@ function connect() {
 }
 
 function submitChoice(letter) {
-  if (!state.value.question || submitted.value || state.value.phase !== 'question') return
+  if (!state.value.question || state.value.phase !== 'question') return
   chosen.value = letter
-  submitted.value = true
   ws.value?.send(JSON.stringify({
     action: 'submit_answer',
     question_id: state.value.question.id,
@@ -164,8 +163,7 @@ onBeforeUnmount(() => {
             v-for="letter in ['A','B','C','D','E']"
             :key="letter"
             class="btn btn-outline-dark question-btn"
-            :class="{ active: chosen === letter }"
-            :disabled="submitted"
+            :class="{ 'fw-bold': chosen === letter, 'active-choice': chosen === letter }"
             @click="submitChoice(letter)"
           >
             {{ letter }}
@@ -199,5 +197,9 @@ onBeforeUnmount(() => {
   color: inherit;
   background-color: inherit;
   border-color: inherit;
+}
+.btn.active-choice {
+  background-color: red !important;
+  color: white !important;
 }
 </style>

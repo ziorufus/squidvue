@@ -49,6 +49,22 @@ class QuizRuntime:
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
 
+    def _question_time(self, quiz: Quiz, question: Question) -> int:
+        if question.question_type == QuestionType.MULTIPLE_CHOICE:
+            return quiz.question_time_multiple_choice
+        return quiz.question_time_open
+
+    def _question_window(self, quiz: Quiz, question_index: int) -> tuple[float, float, int] | None:
+        offset = 0.0
+        for idx, question in enumerate(quiz.questions):
+            question_time = self._question_time(quiz, question)
+            question_start = offset + quiz.countdown_time
+            question_end = question_start + question_time
+            if idx == question_index:
+                return question_start, question_end, question_time
+            offset = question_end
+        return None
+
     def compute_state(self, quiz: Quiz) -> RuntimeState:
         total_questions = len(quiz.questions)
         if total_questions == 0:
@@ -60,20 +76,20 @@ class QuizRuntime:
 
         started_at = quiz.started_at.replace(tzinfo=timezone.utc) if quiz.started_at.tzinfo is None else quiz.started_at
         elapsed = max(0.0, (self._now() - started_at).total_seconds())
-        cycle = quiz.countdown_time + quiz.question_time
-        full = total_questions * cycle
+        offset = 0.0
+        for idx, question in enumerate(quiz.questions):
+            question_time = self._question_time(quiz, question)
+            countdown_end = offset + quiz.countdown_time
+            question_end = countdown_end + question_time
+            if elapsed < countdown_end:
+                remaining = max(1, int(math.ceil(countdown_end - elapsed)))
+                return RuntimeState(status='running', question_index=idx, phase='countdown', remaining_seconds=remaining, total_questions=total_questions)
+            if elapsed < question_end:
+                remaining = max(1, int(math.ceil(question_end - elapsed)))
+                return RuntimeState(status='running', question_index=idx, phase='question', remaining_seconds=remaining, total_questions=total_questions)
+            offset = question_end
 
-        if elapsed >= full:
-            return RuntimeState(status='finished', question_index=None, phase='finished', remaining_seconds=0, total_questions=total_questions)
-
-        idx = int(elapsed // cycle)
-        phase_seconds = elapsed % cycle
-        if phase_seconds < quiz.countdown_time:
-            remaining = max(1, int(math.ceil(quiz.countdown_time - phase_seconds)))
-            return RuntimeState(status='running', question_index=idx, phase='countdown', remaining_seconds=remaining, total_questions=total_questions)
-
-        remaining = max(1, int(math.ceil(cycle - phase_seconds)))
-        return RuntimeState(status='running', question_index=idx, phase='question', remaining_seconds=remaining, total_questions=total_questions)
+        return RuntimeState(status='finished', question_index=None, phase='finished', remaining_seconds=0, total_questions=total_questions)
 
     async def tick_all(self) -> None:
         db: Session = self.session_factory()
@@ -118,15 +134,16 @@ class QuizRuntime:
             )
             value = draft.value if draft else ''
             is_correct = value.strip().lower() == question.correct_answer.strip().lower()
-            score = self._score(question.max_points, quiz.question_time, quiz.question_time if not is_correct else quiz.question_time)
+            max_time = self._question_time(quiz, question)
+            score = self._score(question.max_points, max_time, max_time) if is_correct else 0.0
             db.add(
                 Answer(
                     participant_id=participant.id,
                     question_id=question.id,
                     value=value,
                     is_correct=is_correct,
-                    response_seconds=quiz.question_time,
-                    score=score if is_correct else 0,
+                    response_seconds=max_time,
+                    score=score,
                 )
             )
 
@@ -141,13 +158,14 @@ class QuizRuntime:
                 )
                 if already:
                     continue
+                max_time = self._question_time(quiz, question)
                 db.add(
                     Answer(
                         participant_id=participant.id,
                         question_id=question.id,
                         value='',
                         is_correct=False,
-                        response_seconds=quiz.question_time,
+                        response_seconds=max_time,
                         score=0,
                     )
                 )
@@ -268,7 +286,7 @@ class QuizRuntime:
         existing = db.scalar(
             select(Answer).where(Answer.participant_id == participant.id, Answer.question_id == question.id)
         )
-        if existing:
+        if existing and question.question_type != QuestionType.MULTIPLE_CHOICE:
             logger.info('answer_rejected_duplicate %s', log_ctx)
             return {'accepted': False, 'reason': 'Already answered'}
 
@@ -278,10 +296,13 @@ class QuizRuntime:
             current_question = quiz.questions[state.question_index]
             if current_question.id == question.id:
                 started_at = quiz.started_at.replace(tzinfo=timezone.utc) if quiz.started_at and quiz.started_at.tzinfo is None else quiz.started_at
-                cycle = quiz.countdown_time + quiz.question_time
-                question_start = started_at + timedelta(seconds=state.question_index * cycle + quiz.countdown_time)
+                window = self._question_window(quiz, state.question_index)
+                if not window:
+                    return {'accepted': False, 'reason': 'Question is not open'}
+                question_start_offset, _question_end_offset, max_time = window
+                question_start = started_at + timedelta(seconds=question_start_offset)
                 now = self._now()
-                response_seconds = max(0.0, min(quiz.question_time, (now - question_start).total_seconds()))
+                response_seconds = max(0.0, min(max_time, (now - question_start).total_seconds()))
                 logger.info(
                     'answer_accept_runtime_state %s',
                     {
@@ -292,12 +313,16 @@ class QuizRuntime:
                         'response_seconds': round(response_seconds, 3),
                     },
                 )
-                return self._store_answer(db, quiz, participant, question, value, response_seconds)
+                return self._store_answer(db, quiz, participant, question, value, response_seconds, existing)
 
         started_at = quiz.started_at.replace(tzinfo=timezone.utc) if quiz.started_at and quiz.started_at.tzinfo is None else quiz.started_at
-        cycle = quiz.countdown_time + quiz.question_time
-        question_start = started_at + timedelta(seconds=question_index * cycle + quiz.countdown_time)
-        question_end = question_start + timedelta(seconds=quiz.question_time)
+        window = self._question_window(quiz, question_index)
+        if not window:
+            logger.warning('answer_rejected_invalid_question_index %s', {**log_ctx, 'question_index': question_index})
+            return {'accepted': False, 'reason': 'Invalid question'}
+        question_start_offset, question_end_offset, max_time = window
+        question_start = started_at + timedelta(seconds=question_start_offset)
+        question_end = started_at + timedelta(seconds=question_end_offset)
         now = self._now()
 
         # Small tolerance to absorb transport/scheduling latency at boundary.
@@ -331,7 +356,7 @@ class QuizRuntime:
             return {'accepted': False, 'reason': 'Question is not open'}
 
         effective_now = min(now, question_end)
-        response_seconds = max(0.0, min(quiz.question_time, (effective_now - question_start).total_seconds()))
+        response_seconds = max(0.0, min(max_time, (effective_now - question_start).total_seconds()))
         logger.info(
             'answer_accept_time_window %s',
             {
@@ -340,7 +365,7 @@ class QuizRuntime:
                 'response_seconds': round(response_seconds, 3),
             },
         )
-        return self._store_answer(db, quiz, participant, question, value, response_seconds)
+        return self._store_answer(db, quiz, participant, question, value, response_seconds, existing)
 
     def _store_answer(
         self,
@@ -350,6 +375,7 @@ class QuizRuntime:
         question: Question,
         value: str,
         response_seconds: float,
+        existing: Answer | None = None,
     ) -> dict:
 
         cleaned = value.strip()
@@ -362,17 +388,24 @@ class QuizRuntime:
             is_correct = normalized == question.correct_answer.strip().lower()
             stored_value = cleaned
 
-        score = self._score(question.max_points, quiz.question_time, response_seconds) if is_correct else 0.0
-        db.add(
-            Answer(
-                participant_id=participant.id,
-                question_id=question.id,
-                value=stored_value,
-                is_correct=is_correct,
-                response_seconds=response_seconds,
-                score=score,
+        max_time = self._question_time(quiz, question)
+        score = self._score(question.max_points, max_time, response_seconds) if is_correct else 0.0
+        if existing:
+            existing.value = stored_value
+            existing.is_correct = is_correct
+            existing.response_seconds = response_seconds
+            existing.score = score
+        else:
+            db.add(
+                Answer(
+                    participant_id=participant.id,
+                    question_id=question.id,
+                    value=stored_value,
+                    is_correct=is_correct,
+                    response_seconds=response_seconds,
+                    score=score,
+                )
             )
-        )
         return {'accepted': True, 'is_correct': is_correct, 'score': score, 'response_seconds': response_seconds}
 
     def ensure_participant(self, db: Session, quiz: Quiz, user: User) -> Participant:

@@ -32,3 +32,33 @@ def ensure_runtime_schema() -> None:
         conn.execute(
             text('CREATE UNIQUE INDEX IF NOT EXISTS ix_users_emoji_unique ON users (emoji) WHERE emoji IS NOT NULL')
         )
+
+        quizzes_info = conn.execute(text("PRAGMA table_info('quizzes')")).mappings().all()
+        quiz_columns = {row['name'] for row in quizzes_info}
+
+        if 'question_time_multiple_choice' not in quiz_columns:
+            conn.execute(
+                text(
+                    f'ALTER TABLE quizzes ADD COLUMN question_time_multiple_choice INTEGER NOT NULL DEFAULT {settings.default_question_time_multiple_choice}'
+                )
+            )
+        if 'question_time_open' not in quiz_columns:
+            conn.execute(
+                text(
+                    f'ALTER TABLE quizzes ADD COLUMN question_time_open INTEGER NOT NULL DEFAULT {settings.default_question_time_open}'
+                )
+            )
+
+        if 'question_time' in quiz_columns:
+            conn.execute(
+                text(
+                    'UPDATE quizzes SET question_time_multiple_choice = question_time '
+                    'WHERE question_time_multiple_choice IS NULL OR question_time_multiple_choice <= 0'
+                )
+            )
+            conn.execute(
+                text(
+                    'UPDATE quizzes SET question_time_open = question_time '
+                    'WHERE question_time_open IS NULL OR question_time_open <= 0'
+                )
+            )

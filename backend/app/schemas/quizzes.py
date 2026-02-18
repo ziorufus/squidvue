@@ -17,7 +17,8 @@ class QuestionIn(BaseModel):
 
 class QuizIn(BaseModel):
     title: str
-    question_time: int = Field(ge=1)
+    question_time_multiple_choice: int = Field(ge=1)
+    question_time_open: int = Field(ge=1)
     countdown_time: int = Field(ge=1)
     emoji_pool: str = ''
     questions: list[QuestionIn]
@@ -27,7 +28,8 @@ class QuizOut(BaseModel):
     id: int
     code: str
     title: str
-    question_time: int
+    question_time_multiple_choice: int
+    question_time_open: int
     countdown_time: int
     emoji_pool: str
     status: str

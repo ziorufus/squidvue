@@ -2,9 +2,12 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import json
 import math
 import logging
+from uuid import uuid4
 
+from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,26 +28,120 @@ class RuntimeState:
 
 
 class QuizRuntime:
-    def __init__(self, session_factory: sessionmaker) -> None:
+    def __init__(self, session_factory: sessionmaker, redis_url: str | None = None) -> None:
         self.session_factory = session_factory
+        self.redis_url = redis_url
         self.ws = WebSocketManager()
         self.locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.last_phase: dict[str, tuple[str, int | None]] = {}
+        self.redis: Redis | None = None
+        self._pubsub_task: asyncio.Task | None = None
         self._task: asyncio.Task | None = None
+        self._worker_id = uuid4().hex
+        self._leader_lock_key = 'quiz:runtime:leader'
+        self._leader_lock_ttl_seconds = 3
+        self._state_channel = 'quiz:state'
 
     async def start(self) -> None:
+        if self.redis_url and not self.redis:
+            try:
+                self.redis = Redis.from_url(self.redis_url, decode_responses=True)
+                await self.redis.ping()
+                self._pubsub_task = asyncio.create_task(self._pubsub_loop())
+            except Exception:
+                logger.exception('redis_unavailable_falling_back_to_local_runtime')
+                if self.redis:
+                    await self.redis.aclose()
+                self.redis = None
+                self._pubsub_task = None
         if not self._task:
             self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
+        if self._pubsub_task:
+            self._pubsub_task.cancel()
+            try:
+                await self._pubsub_task
+            except asyncio.CancelledError:
+                pass
+            self._pubsub_task = None
         if self._task:
             self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
             self._task = None
+        if self.redis:
+            try:
+                owner = await self.redis.get(self._leader_lock_key)
+                if owner == self._worker_id:
+                    await self.redis.delete(self._leader_lock_key)
+            except Exception:
+                logger.exception('redis_release_leader_lock_failed')
+            await self.redis.aclose()
+            self.redis = None
 
     async def _loop(self) -> None:
         while True:
-            await self.tick_all()
+            if await self._is_tick_leader():
+                await self.tick_all()
             await asyncio.sleep(1)
+
+    async def _is_tick_leader(self) -> bool:
+        if not self.redis:
+            return True
+        try:
+            acquired = await self.redis.set(
+                self._leader_lock_key,
+                self._worker_id,
+                nx=True,
+                ex=self._leader_lock_ttl_seconds,
+            )
+            if acquired:
+                return True
+
+            owner = await self.redis.get(self._leader_lock_key)
+            if owner == self._worker_id:
+                await self.redis.expire(self._leader_lock_key, self._leader_lock_ttl_seconds)
+                return True
+            return False
+        except Exception:
+            logger.exception('redis_leader_check_failed')
+            return True
+
+    async def _pubsub_loop(self) -> None:
+        if not self.redis:
+            return
+
+        pubsub = self.redis.pubsub()
+        try:
+            await pubsub.subscribe(self._state_channel)
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if not message:
+                    await asyncio.sleep(0.05)
+                    continue
+
+                raw_payload = message.get('data')
+                if not raw_payload:
+                    continue
+                try:
+                    payload = json.loads(raw_payload)
+                except json.JSONDecodeError:
+                    logger.warning('redis_invalid_payload')
+                    continue
+
+                quiz_code = payload.get('quiz_code')
+                if not quiz_code:
+                    continue
+                await self._broadcast_local_state(str(quiz_code), payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception('redis_pubsub_loop_failed')
+        finally:
+            await pubsub.aclose()
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -207,9 +304,18 @@ class QuizRuntime:
             'question': question_payload,
             'stats': stats,
         }
-        await self.ws.broadcast(f'quiz:{quiz.code}:student', payload)
-        await self.ws.broadcast(f'quiz:{quiz.code}:admin', payload)
-        await self.ws.broadcast(f'quiz:{quiz.code}:screen', payload)
+        if self.redis:
+            try:
+                await self.redis.publish(self._state_channel, json.dumps(payload))
+                return
+            except Exception:
+                logger.exception('redis_publish_failed_falling_back_to_local_broadcast')
+        await self._broadcast_local_state(quiz.code, payload)
+
+    async def _broadcast_local_state(self, quiz_code: str, payload: dict) -> None:
+        await self.ws.broadcast(f'quiz:{quiz_code}:student', payload)
+        await self.ws.broadcast(f'quiz:{quiz_code}:admin', payload)
+        await self.ws.broadcast(f'quiz:{quiz_code}:screen', payload)
 
     def quiz_stats(self, db: Session, quiz_id: int) -> dict:
         total_participants = db.scalar(select(func.count()).select_from(Participant).where(Participant.quiz_id == quiz_id)) or 0

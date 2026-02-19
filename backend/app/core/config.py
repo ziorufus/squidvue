@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     secret_key: str
     base_url: str = 'http://localhost:5173'
     database_url: str = 'sqlite:///./quiz.db'
+    redis_url: str | None = None
     access_token_expire_minutes: int = 720
 
 

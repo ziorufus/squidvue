@@ -18,6 +18,21 @@ def get_db():
         db.close()
 
 
+def initialize_schema() -> None:
+    """Create tables/types safely across multi-worker startup."""
+    if engine.dialect.name == 'postgresql':
+        # Serialize DDL across workers/processes to avoid enum type creation races.
+        with engine.begin() as conn:
+            conn.execute(text('SELECT pg_advisory_lock(88442211)'))
+            try:
+                Base.metadata.create_all(bind=conn)
+            finally:
+                conn.execute(text('SELECT pg_advisory_unlock(88442211)'))
+        return
+
+    Base.metadata.create_all(bind=engine)
+
+
 def ensure_runtime_schema() -> None:
     if not settings.database_url.startswith('sqlite'):
         return

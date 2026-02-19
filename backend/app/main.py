@@ -8,18 +8,18 @@ from sqlalchemy.orm import selectinload
 
 from app.api import auth, public, quizzes, users
 from app.core.config import settings
-from app.core.db import Base, SessionLocal, engine, ensure_runtime_schema
+from app.core.db import SessionLocal, ensure_runtime_schema, initialize_schema
 from app.models import Question, Quiz, User, UserRole
 from app.services.runtime import QuizRuntime
 from app.services.security import decode_access_token
 
 
-runtime = QuizRuntime(SessionLocal)
+runtime = QuizRuntime(SessionLocal, settings.redis_url)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    initialize_schema()
     ensure_runtime_schema()
     app.state.runtime = runtime
     await runtime.start()

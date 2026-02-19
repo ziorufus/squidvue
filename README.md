@@ -28,6 +28,7 @@ Backend (`backend/.env` from `backend/.env.example`):
 - `SECRET_KEY`
 - `BASE_URL`
 - `DATABASE_URL`
+- `REDIS_URL` (optional; enables cross-worker pub/sub and runtime leader lock)
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 
 Frontend (`frontend/.env` from `frontend/.env.example`):

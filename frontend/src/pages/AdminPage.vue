@@ -16,10 +16,12 @@ const defaults = ref({
   default_max_points: 1
 })
 const status = ref('')
+const importError = ref('')
 const wsStats = ref(null)
 const ws = ref(null)
 const selectedQuiz = ref(null)
 const privilegedEmail = ref('')
+const importInput = ref(null)
 
 function blankQuestion(position) {
   return {
@@ -56,6 +58,55 @@ function resetForm() {
 
 function addQuestion() {
   form.questions.push(blankQuestion(form.questions.length + 1))
+}
+
+function toQuestionType(type) {
+  return type === 'open' ? 'open' : 'multiple_choice'
+}
+
+function questionFromImport(raw, position) {
+  const type = toQuestionType(raw?.type)
+  const options = Array.isArray(raw?.options) ? raw.options : []
+  return {
+    id: null,
+    position,
+    text: typeof raw?.text === 'string' ? raw.text : '',
+    question_type: type,
+    option_a: type === 'multiple_choice' ? (options[0] ?? '') : '',
+    option_b: type === 'multiple_choice' ? (options[1] ?? '') : '',
+    option_c: type === 'multiple_choice' ? (options[2] ?? '') : '',
+    option_d: type === 'multiple_choice' ? (options[3] ?? '') : '',
+    option_e: type === 'multiple_choice' ? (options[4] ?? '') : '',
+    correct_answer: raw?.correct_answer != null ? String(raw.correct_answer) : '',
+    max_points: Number.isInteger(raw?.max_points) && raw.max_points > 0
+      ? raw.max_points
+      : defaults.value.default_max_points
+  }
+}
+
+async function importQuestions(event) {
+  importError.value = ''
+  status.value = ''
+  const file = event?.target?.files?.[0]
+  if (!file) return
+
+  try {
+    const content = await file.text()
+    const parsed = JSON.parse(content)
+    if (!Array.isArray(parsed)) {
+      throw new Error('JSON root must be an array of questions')
+    }
+    if (!parsed.length) {
+      throw new Error('JSON file does not contain any questions')
+    }
+
+    form.questions = parsed.map((q, i) => questionFromImport(q, i + 1))
+    status.value = `Imported ${form.questions.length} question(s)`
+  } catch (error) {
+    importError.value = error?.message || 'Invalid JSON file'
+  } finally {
+    if (importInput.value) importInput.value.value = ''
+  }
 }
 
 function removeQuestion(index) {
@@ -197,7 +248,22 @@ onBeforeUnmount(() => {
           </div>
 
           <hr />
-          <h3 class="h6">Questions</h3>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h3 class="h6 mb-0">Questions</h3>
+            <div>
+              <input
+                ref="importInput"
+                type="file"
+                class="form-control form-control-sm"
+                accept="application/json,.json"
+                @change="importQuestions"
+              />
+            </div>
+          </div>
+          <div class="small text-muted mb-2">
+            Import JSON array with `text`, `type` (`multiple_choice` or `open`), `correct_answer`, optional `max_points`, and `options` (optional for `open` questions).
+          </div>
+          <div v-if="importError" class="text-danger mb-2">{{ importError }}</div>
           <div v-for="(q, idx) in form.questions" :key="idx" class="border rounded p-2 mb-2 bg-light">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <strong>Question {{ idx + 1 }}</strong>

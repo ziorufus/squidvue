@@ -119,7 +119,7 @@ def create_quiz(payload: QuizIn, current_user: User = Depends(require_privileged
                 option_d=q.option_d,
                 option_e=q.option_e,
                 correct_answer=q.correct_answer,
-                max_points=q.max_points,
+                max_points=q.max_points or settings.default_max_points,
             )
         )
 
@@ -160,7 +160,7 @@ def update_quiz(quiz_id: int, payload: QuizIn, current_user: User = Depends(requ
                 option_d=q.option_d,
                 option_e=q.option_e,
                 correct_answer=q.correct_answer,
-                max_points=q.max_points,
+                max_points=q.max_points or settings.default_max_points,
             )
         )
 

@@ -12,7 +12,7 @@ class QuestionIn(BaseModel):
     option_d: str | None = None
     option_e: str | None = None
     correct_answer: str
-    max_points: int = Field(ge=1)
+    max_points: int | None = Field(default=None, ge=1)
 
 
 class QuizIn(BaseModel):

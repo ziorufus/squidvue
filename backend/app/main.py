@@ -14,7 +14,7 @@ from app.services.runtime import QuizRuntime
 from app.services.security import decode_access_token
 
 
-runtime = QuizRuntime(SessionLocal)
+runtime = QuizRuntime(SessionLocal, settings.redis_url)
 
 
 @asynccontextmanager

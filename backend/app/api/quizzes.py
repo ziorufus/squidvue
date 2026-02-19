@@ -202,30 +202,6 @@ async def start_quiz(quiz_id: int, request: Request, current_user: User = Depend
     return {'ok': True, 'status': quiz.status.value}
 
 
-@router.post('/{quiz_id}/stop')
-async def stop_quiz(quiz_id: int, request: Request, current_user: User = Depends(require_privileged), db: Session = Depends(get_db)):
-    quiz = db.scalar(select(Quiz).options(selectinload(Quiz.questions)).where(Quiz.id == quiz_id))
-    if not quiz:
-        raise HTTPException(status_code=404, detail='Quiz not found')
-    if not can_edit(current_user, quiz):
-        raise HTTPException(status_code=403, detail='Not allowed')
-
-    quiz.status = QuizStatus.READY
-    quiz.started_at = None
-    quiz.stopped_at = datetime.utcnow()
-
-    participant_ids = db.scalars(select(Participant.id).where(Participant.quiz_id == quiz.id)).all()
-    if participant_ids:
-        db.execute(delete(Answer).where(Answer.participant_id.in_(participant_ids)))
-        db.execute(delete(OpenDraft).where(OpenDraft.participant_id.in_(participant_ids)))
-    db.execute(delete(Participant).where(Participant.quiz_id == quiz.id))
-    db.commit()
-
-    runtime = request.app.state.runtime
-    await runtime.broadcast_quiz_state(db, quiz)
-    return {'ok': True, 'status': quiz.status.value}
-
-
 @router.post('/{quiz_id}/reset')
 async def reset_quiz(quiz_id: int, request: Request, current_user: User = Depends(require_privileged), db: Session = Depends(get_db)):
     quiz = db.get(Quiz, quiz_id)

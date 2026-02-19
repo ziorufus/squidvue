@@ -181,11 +181,6 @@ async function startQuiz(id) {
   await loadAll()
 }
 
-async function stopQuiz(id) {
-  await api.post(`/api/quizzes/${id}/stop`)
-  await loadAll()
-}
-
 async function resetQuiz(id) {
   await api.post(`/api/quizzes/${id}/reset`)
   await loadAll()
@@ -326,7 +321,6 @@ onBeforeUnmount(() => {
               <button class="btn btn-sm btn-outline-dark" @click="pickQuiz(q)">Watch</button>
               <button class="btn btn-sm btn-outline-primary" @click="editQuiz(q.code)">Edit</button>
               <button class="btn btn-sm btn-success" @click="startQuiz(q.id)">Start</button>
-              <button class="btn btn-sm btn-warning" @click="stopQuiz(q.id)">Stop</button>
               <button class="btn btn-sm btn-secondary" @click="resetQuiz(q.id)">Reset</button>
               <button class="btn btn-sm btn-danger" @click="removeQuiz(q.id)">Delete</button>
               <button class="btn btn-sm btn-outline-info" @click="router.push(`/questions/${q.code}`)">Question Screen</button>

@@ -58,6 +58,7 @@ function joinQuiz() {
             </div>
             <div class="mt-3 d-flex gap-2">
               <button v-if="isPrivileged" class="btn btn-outline-dark" @click="router.push('/admin')">Admin Panel</button>
+              <button class="btn btn-outline-success" @click="router.push('/ranking')">Global Ranking</button>
               <button class="btn btn-outline-secondary" @click="logout">Logout</button>
             </div>
           </div>

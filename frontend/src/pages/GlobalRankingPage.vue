@@ -33,7 +33,7 @@ onBeforeUnmount(() => {
       <h1 class="h2 mb-0">Global Ranking</h1>
       <div class="d-flex gap-2 align-items-center">
         <small class="text-muted">Updated: {{ lastUpdated || '-' }}</small>
-        <button class="btn btn-outline-secondary" @click="router.push('/admin')">Back</button>
+        <button class="btn btn-outline-secondary" @click="router.push('/')">Back</button>
       </div>
     </div>
 

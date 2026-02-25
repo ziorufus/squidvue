@@ -13,7 +13,7 @@ const router = createRouter({
     { path: '/admin', component: AdminPage, meta: { requiresAuth: true, privileged: true } },
     { path: '/quiz/:code', component: QuizPlayerPage, meta: { requiresAuth: true } },
     { path: '/questions/:code', component: QuestionScreenPage, meta: { requiresAuth: true, privileged: true } },
-    { path: '/ranking', component: GlobalRankingPage, meta: { requiresAuth: true, privileged: true } }
+    { path: '/ranking', component: GlobalRankingPage, meta: { requiresAuth: true } }
   ]
 })
 

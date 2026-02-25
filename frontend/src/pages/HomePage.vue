@@ -1,9 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import GoogleLoginButton from '../components/GoogleLoginButton.vue'
 import api from '../services/api'
-import { clearSession, getUser, setSession } from '../services/auth'
+import { clearSession, getToken, getUser, setSession } from '../services/auth'
 
 const router = useRouter()
 const code = ref('')
@@ -35,6 +35,18 @@ function joinQuiz() {
   if (!code.value.trim()) return
   router.push(`/quiz/${code.value.trim().toUpperCase()}`)
 }
+
+onMounted(async () => {
+  const token = getToken()
+  if (!token) return
+  try {
+    const { data } = await api.get('/api/auth/me')
+    setSession(token, data)
+    user.value = data
+  } catch {
+    user.value = null
+  }
+})
 </script>
 
 <template>

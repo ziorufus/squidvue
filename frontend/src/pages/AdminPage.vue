@@ -324,6 +324,7 @@ onBeforeUnmount(() => {
               <button class="btn btn-sm btn-secondary" @click="resetQuiz(q.id)">Reset</button>
               <button class="btn btn-sm btn-danger" @click="removeQuiz(q.id)">Delete</button>
               <button class="btn btn-sm btn-outline-info" @click="router.push(`/questions/${q.code}`)">Question Screen</button>
+              <button class="btn btn-sm btn-outline-warning" @click="router.push(`/ranking/${q.code}`)">Quiz Ranking</button>
               <button class="btn btn-sm btn-outline-success" @click="router.push('/ranking')">Global Ranking</button>
             </div>
           </div>

@@ -18,16 +18,27 @@ const submitted = ref(false)
 const desktop = ref(window.innerWidth >= 768)
 const ack = ref('')
 const lastStateKey = ref('')
+const lastDraftSent = ref({ questionId: null, value: null })
+let draftTimerId = null
 
 function resetAnswerUi() {
+  clearDraftTimer()
   chosen.value = ''
   openAnswer.value = ''
   submitted.value = false
   ack.value = ''
+  lastDraftSent.value = { questionId: null, value: null }
 }
 
 function onResize() {
   desktop.value = window.innerWidth >= 768
+}
+
+function clearDraftTimer() {
+  if (draftTimerId) {
+    window.clearTimeout(draftTimerId)
+    draftTimerId = null
+  }
 }
 
 async function loadInfo() {
@@ -91,16 +102,30 @@ function submitChoice(letter) {
 }
 
 function saveDraft() {
-  if (!state.value.question || state.value.question.question_type !== 'open') return
+  const question = state.value.question
+  if (!question || question.question_type !== 'open') return
+  if (lastDraftSent.value.questionId === question.id && lastDraftSent.value.value === openAnswer.value) return
   ws.value?.send(JSON.stringify({
     action: 'save_open_draft',
-    question_id: state.value.question.id,
+    question_id: question.id,
     value: openAnswer.value
   }))
+  lastDraftSent.value = { questionId: question.id, value: openAnswer.value }
+}
+
+function scheduleDraftSave() {
+  const question = state.value.question
+  if (!question || question.question_type !== 'open' || submitted.value) return
+
+  clearDraftTimer()
+  draftTimerId = window.setTimeout(() => {
+    saveDraft()
+  }, 500)
 }
 
 function submitOpen(event) {
   if (!state.value.question || submitted.value || state.value.phase !== 'question') return
+  clearDraftTimer()
   event?.currentTarget?.blur?.()
   submitted.value = true
   ws.value?.send(JSON.stringify({
@@ -110,7 +135,7 @@ function submitOpen(event) {
   }))
 }
 
-watch(openAnswer, saveDraft)
+watch(openAnswer, scheduleDraftSave)
 
 onMounted(async () => {
   window.addEventListener('resize', onResize)
@@ -123,6 +148,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearDraftTimer()
   window.removeEventListener('resize', onResize)
   if (ws.value) ws.value.close()
 })

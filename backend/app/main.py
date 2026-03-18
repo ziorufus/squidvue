@@ -136,7 +136,7 @@ async def quiz_socket(websocket: WebSocket, code: str, channel: str):
                 result = runtime.submit_answer(db, quiz, participant, question, value)
                 db.commit()
                 await websocket.send_json({'type': 'answer_ack', **result})
-                await runtime.broadcast_quiz_state(db, quiz)
+                await runtime.broadcast_quiz_state(db, quiz, include_stats=False)
 
             elif action == 'save_open_draft' and participant:
                 qid = int(msg.get('question_id'))

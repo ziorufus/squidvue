@@ -34,6 +34,7 @@ class QuizRuntime:
         self.ws = WebSocketManager()
         self.locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.last_phase: dict[str, tuple[str, int | None]] = {}
+        self.last_stats: dict[str, dict] = {}
         self.redis: Redis | None = None
         self._pubsub_task: asyncio.Task | None = None
         self._task: asyncio.Task | None = None
@@ -272,7 +273,7 @@ class QuizRuntime:
             return 0.0
         return float(max_points + max_points * (max_time - time_taken) / max_time)
 
-    async def broadcast_quiz_state(self, db: Session, quiz: Quiz) -> None:
+    async def broadcast_quiz_state(self, db: Session, quiz: Quiz, include_stats: bool = True) -> None:
         quiz.questions.sort(key=lambda q: q.position)
         state = self.compute_state(quiz)
         question_payload = None
@@ -292,7 +293,10 @@ class QuizRuntime:
                 },
             }
 
-        stats = self.quiz_stats(db, quiz.id)
+        stats = self.last_stats.get(quiz.code)
+        if include_stats or stats is None:
+            stats = self.quiz_stats(db, quiz.id)
+            self.last_stats[quiz.code] = stats
         payload = {
             'type': 'state',
             'quiz_code': quiz.code,

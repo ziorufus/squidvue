@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -178,6 +179,103 @@ def delete_quiz(quiz_id: int, current_user: User = Depends(require_privileged), 
     db.delete(quiz)
     db.commit()
     return {'ok': True}
+
+
+@router.get('/{quiz_id}/detail')
+def quiz_detail(quiz_id: int, current_user: User = Depends(require_privileged), db: Session = Depends(get_db)):
+    quiz = db.scalar(select(Quiz).options(selectinload(Quiz.questions)).where(Quiz.id == quiz_id))
+    if not quiz:
+        raise HTTPException(status_code=404, detail='Quiz not found')
+    if not can_edit(current_user, quiz):
+        raise HTTPException(status_code=403, detail='Not allowed')
+
+    questions = sorted(quiz.questions, key=lambda q: q.position)
+
+    participants = db.execute(
+        select(Participant.id, Participant.emoji).where(Participant.quiz_id == quiz_id)
+    ).all()
+    participant_emojis = {p.id: p.emoji for p in participants}
+    all_participant_ids = set(participant_emojis.keys())
+
+    answers_by_question: dict[int, list] = defaultdict(list)
+    if questions:
+        for ans in db.execute(
+            select(Answer.question_id, Answer.participant_id, Answer.value)
+            .where(Answer.question_id.in_([q.id for q in questions]))
+        ).all():
+            if ans.participant_id in participant_emojis:
+                answers_by_question[ans.question_id].append((ans.participant_id, ans.value))
+
+    result_questions = []
+    for question in questions:
+        qanswers = answers_by_question[question.id]
+        answered_pids = {pid for pid, _ in qanswers}
+        no_answer_emojis = sorted(participant_emojis[pid] for pid in all_participant_ids if pid not in answered_pids)
+
+        if question.question_type == QuestionType.MULTIPLE_CHOICE:
+            option_groups: dict[str, list] = defaultdict(list)
+            for pid, value in qanswers:
+                option_groups[(value or '').upper()].append(participant_emojis[pid])
+
+            choices = []
+            for letter in ['A', 'B', 'C', 'D', 'E']:
+                text = getattr(question, f'option_{letter.lower()}')
+                if text is None:
+                    continue
+                emojis = sorted(option_groups.get(letter, []))
+                choices.append({
+                    'option': letter,
+                    'text': text,
+                    'count': len(emojis),
+                    'emojis': emojis,
+                    'is_correct': letter == (question.correct_answer or '').upper(),
+                })
+
+            if no_answer_emojis:
+                choices.append({'option': 'no_answer', 'text': None, 'count': len(no_answer_emojis), 'emojis': no_answer_emojis, 'is_correct': False})
+
+            stats = {'type': 'multiple_choice', 'choices': choices}
+
+        else:
+            value_groups: dict[str, list] = defaultdict(list)
+            for pid, value in qanswers:
+                value_groups[value].append(participant_emojis[pid])
+
+            stats = {
+                'type': 'open',
+                'answers': sorted(
+                    [{'value': val, 'count': len(emojis), 'emojis': sorted(emojis)} for val, emojis in value_groups.items()],
+                    key=lambda x: -x['count'],
+                ),
+            }
+
+        result_questions.append({
+            'id': question.id,
+            'position': question.position,
+            'text': question.text,
+            'question_type': question.question_type.value,
+            'correct_answer': question.correct_answer,
+            'max_points': question.max_points,
+            'options': {
+                letter: getattr(question, f'option_{letter.lower()}')
+                for letter in ['A', 'B', 'C', 'D', 'E']
+                if getattr(question, f'option_{letter.lower()}') is not None
+            },
+            'stats': stats,
+        })
+
+    return {
+        'quiz': {
+            'id': quiz.id,
+            'code': quiz.code,
+            'title': quiz.title,
+            'status': quiz.status.value,
+            'started_at': quiz.started_at.isoformat() if quiz.started_at else None,
+            'stopped_at': quiz.stopped_at.isoformat() if quiz.stopped_at else None,
+        },
+        'participants_count': len(participant_emojis),
+        'questions': result_questions,
+    }
 
 
 @router.post('/{quiz_id}/start')

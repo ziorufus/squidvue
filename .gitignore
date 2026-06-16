@@ -1,0 +1,8 @@
+env
+frontend/node_modules
+*.tar.gz
+*.db
+*.pyc
+.claude
+.env
+package-lock.json

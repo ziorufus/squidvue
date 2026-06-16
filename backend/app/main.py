@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api import auth, public, quizzes, users
 from app.core.config import settings
 from app.core.db import SessionLocal, ensure_runtime_schema, initialize_schema
-from app.models import Question, Quiz, User, UserRole
+from app.models import Participant, Question, Quiz, User, UserRole
 from app.services.runtime import QuizRuntime
 from app.services.security import decode_access_token
 
@@ -91,64 +91,79 @@ async def quiz_socket(websocket: WebSocket, code: str, channel: str):
     room = f'quiz:{code}:{channel}'
     await runtime.ws.connect(room, websocket)
 
+    # Setup phase: short-lived DB session just for auth, participant registration, and initial state push.
+    # The connection is released before entering the idle receive loop.
+    participant_id: int | None = None
     db = SessionLocal()
     try:
         quiz = _load_quiz_fresh(db, code)
         if not quiz:
             await websocket.send_json({'type': 'error', 'message': 'Quiz not found'})
             await websocket.close(code=1008)
+            runtime.ws.disconnect(room, websocket)
             return
 
-        participant = None
         if channel == 'student':
             if not user:
                 await websocket.send_json({'type': 'error', 'message': 'Auth required'})
                 await websocket.close(code=1008)
+                runtime.ws.disconnect(room, websocket)
                 return
             try:
                 participant = runtime.ensure_participant(db, quiz, user)
+                db.commit()
+                participant_id = participant.id
             except (ValueError, RuntimeError) as exc:
                 await websocket.send_json({'type': 'error', 'message': str(exc)})
                 await websocket.close(code=1008)
+                runtime.ws.disconnect(room, websocket)
                 return
-            db.commit()
 
         await runtime.broadcast_quiz_state(db, quiz)
+    finally:
+        db.close()
 
+    # Message loop: a fresh DB session is opened and closed for each incoming message.
+    # No DB connection is held while waiting for the next message.
+    try:
         while True:
             msg = await websocket.receive_json()
             action = msg.get('action')
 
-            db.expire_all()
-            quiz = _load_quiz_fresh(db, code)
-            if not quiz:
-                await websocket.send_json({'type': 'error', 'message': 'Quiz not found'})
-                continue
-            quiz.questions.sort(key=lambda q: q.position)
-
-            if action == 'submit_answer' and participant:
-                qid = int(msg.get('question_id'))
-                value = str(msg.get('value', ''))
-                question = db.get(Question, qid)
-                if not question or question.quiz_id != quiz.id:
-                    await websocket.send_json({'type': 'answer_ack', 'accepted': False, 'reason': 'Invalid question'})
-                    continue
-                result = runtime.submit_answer(db, quiz, participant, question, value)
-                db.commit()
-                await websocket.send_json({'type': 'answer_ack', **result})
-                await runtime.broadcast_quiz_state(db, quiz, include_stats=False)
-
-            elif action == 'save_open_draft' and participant:
-                qid = int(msg.get('question_id'))
-                value = str(msg.get('value', ''))
-                question = db.get(Question, qid)
-                if question and question.quiz_id == quiz.id:
-                    runtime.upsert_open_draft(db, participant.id, qid, value)
-                    db.commit()
-            elif action == 'ping':
+            if action == 'ping':
                 await websocket.send_json({'type': 'pong'})
+                continue
+
+            db = SessionLocal()
+            try:
+                quiz = _load_quiz_fresh(db, code)
+                if not quiz:
+                    await websocket.send_json({'type': 'error', 'message': 'Quiz not found'})
+                    continue
+                quiz.questions.sort(key=lambda q: q.position)
+
+                if action == 'submit_answer' and participant_id is not None:
+                    qid = int(msg.get('question_id'))
+                    value = str(msg.get('value', ''))
+                    question = db.get(Question, qid)
+                    if not question or question.quiz_id != quiz.id:
+                        await websocket.send_json({'type': 'answer_ack', 'accepted': False, 'reason': 'Invalid question'})
+                        continue
+                    participant = db.get(Participant, participant_id)
+                    result = runtime.submit_answer(db, quiz, participant, question, value)
+                    db.commit()
+                    await websocket.send_json({'type': 'answer_ack', **result})
+                    await runtime.broadcast_quiz_state(db, quiz, include_stats=False)
+
+                elif action == 'save_open_draft' and participant_id is not None:
+                    qid = int(msg.get('question_id'))
+                    value = str(msg.get('value', ''))
+                    question = db.get(Question, qid)
+                    if question and question.quiz_id == quiz.id:
+                        runtime.upsert_open_draft(db, participant_id, qid, value)
+                        db.commit()
+            finally:
+                db.close()
 
     except WebSocketDisconnect:
         runtime.ws.disconnect(room, websocket)
-    finally:
-        db.close()

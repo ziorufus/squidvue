@@ -17,7 +17,7 @@ const router = createRouter({
     { path: '/questions/:code', component: QuestionScreenPage, meta: { requiresAuth: true, privileged: true } },
     { path: '/ranking', component: GlobalRankingPage, meta: { requiresAuth: true } },
     { path: '/ranking/:code', component: QuizRankingPage, meta: { requiresAuth: true } },
-    { path: '/detail/:quiz_id', component: QuizDetailPage, meta: { requiresAuth: true, privileged: true } }
+    { path: '/detail/:code', component: QuizDetailPage, meta: { requiresAuth: true, privileged: true } }
   ]
 })
 

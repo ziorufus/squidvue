@@ -5,7 +5,7 @@ import api from '../services/api'
 
 const route = useRoute()
 const router = useRouter()
-const quizId = route.params.quiz_id
+const code = route.params.code
 
 const quiz = ref(null)
 const questions = ref([])
@@ -15,7 +15,8 @@ const error = ref('')
 
 async function fetchDetail() {
   try {
-    const { data } = await api.get(`/api/quizzes/${quizId}/detail`)
+    const { data: quizData } = await api.get(`/api/quizzes/code/${code}`)
+    const { data } = await api.get(`/api/quizzes/${quizData.id}/detail`)
     quiz.value = data.quiz
     questions.value = data.questions
     participantsCount.value = data.participants_count
